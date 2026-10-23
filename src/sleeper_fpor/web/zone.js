@@ -68,15 +68,45 @@
       : `https://sleepercdn.com/content/nfl/players/thumb/${id}.jpg`;
   }
 
-  /** Every drafted player, plus every undrafted player rostered today. */
-  function draftValues(bundle, { neighbors, minGames, through }) {
+  /**
+   * Recent form: weighted PPG over the player's last `lastN` games *played* through week
+   * `through`. Missed weeks are skipped, so the window reaches back past an injury instead
+   * of counting it as zero. With a half-life H, a game's weight halves every H games back
+   * (most recent = 1); halfLife 0 or null weights the window equally. Null until the player
+   * has `minGames` games played in total.
+   */
+  function formPpg(player, { through, lastN, halfLife, minGames }) {
+    const played = [];
+    const weekly = (player && player.weekly) || [];
+    for (let w = 0; w < Math.min(through, weekly.length); w++) {
+      if (weekly[w] !== null && weekly[w] !== undefined) played.push(weekly[w]);
+    }
+    if (played.length < Math.max(minGames, 1)) return null;
+    const window = played.slice(-Math.max(lastN, 1)).reverse(); // most recent first
+    let num = 0;
+    let den = 0;
+    window.forEach((pts, age) => {
+      const weight = halfLife > 0 ? Math.pow(0.5, age / halfLife) : 1;
+      num += weight * pts;
+      den += weight;
+    });
+    return num / den;
+  }
+
+  /**
+   * Every drafted player, plus every undrafted player rostered today, valued with
+   * `ppgOf(id)` -- season PPG by default, or any other per-player PPG (e.g. recent form).
+   * The same function values the zone neighbors, so comparisons stay like-for-like.
+   */
+  function draftValues(bundle, { neighbors, minGames, through, ppgOf }) {
     const picks = [...bundle.picks].sort((a, b) => a.pick_no - b.pick_no);
     const players = bundle.players;
     const teams = bundle.league.teams;
     const lastPick = picks.length ? picks[picks.length - 1].pick_no : 0;
     const lines = {};
     for (const id of Object.keys(players)) lines[id] = seasonLine(players[id], through);
-    const candidates = picks.map((pick) => ({ pick, value: gamesPpg(lines[pick.player_id], minGames) }));
+    const ppg = ppgOf || ((id) => gamesPpg(lines[id], minGames));
+    const candidates = picks.map((pick) => ({ pick, value: ppg(pick.player_id) }));
 
     function build(id, pick) {
       const player = players[id] || {};
@@ -88,7 +118,7 @@
       const pos = player.pos || (pick && pick.pos) || "UNK";
       const anchor = pick ? pick.pick_no : lastPick + 1;
       const base = zoneBaseline(anchor, pos, candidates, neighbors, id);
-      const value = gamesPpg(lines[id], minGames);
+      const value = ppg(id);
       return {
         id,
         name: player.name || (pick && pick.name) || id,
@@ -149,16 +179,22 @@
   }
 
   /** Everything the page renders, for one setting of the controls. */
-  function compute(bundle, { neighbors = 6, minGames = 3, through } = {}) {
+  function compute(bundle, { neighbors = 6, minGames = 3, through, recentGames = 4, halfLife = 3 } = {}) {
     const completed = bundle.league.completed_weeks;
     const thru = Math.max(1, Math.min(through || completed, Math.max(completed, 1)));
     const mg = Math.max(1, Math.min(minGames, thru));
+    const lastN = Math.max(1, Math.min(recentGames, thru));
     const values = draftValues(bundle, { neighbors, minGames: mg, through: thru });
+    const recentOf = (id) =>
+      formPpg(bundle.players[id], { through: thru, lastN, halfLife, minGames: mg });
+    const recent = new Map(
+      draftValues(bundle, { neighbors, minGames: mg, through: thru, ppgOf: recentOf }).map((v) => [v.id, v])
+    );
     const names = new Map(bundle.teams.map((t) => [t.roster_id, t.name]));
     const summaries = teamSummaries(values, bundle.teams.map((t) => t.roster_id));
     return {
       league: { ...bundle.league, through: thru },
-      settings: { neighbors, min_games: mg },
+      settings: { neighbors, min_games: mg, recent_games: lastN, half_life: halfLife },
       groups: POSITION_GROUPS,
       origins: ORIGINS,
       teams: bundle.teams.map((t) => {
@@ -166,14 +202,23 @@
         const total = s.roster.own_pick + s.roster.acquired + s.roster.pickup;
         return { ...t, draft_class: s.draft_class, roster: s.roster, roster_total: total };
       }),
-      players: values.map((v) => ({
-        ...v,
-        drafted_by: v.drafted_by_id === null ? null : names.get(v.drafted_by_id) ?? null,
-        owner: v.owner_id === null ? null : names.get(v.owner_id) ?? null,
-      })),
+      players: values.map((v) => {
+        const r = recent.get(v.id);
+        return {
+          ...v,
+          drafted_by: v.drafted_by_id === null ? null : names.get(v.drafted_by_id) ?? null,
+          owner: v.owner_id === null ? null : names.get(v.owner_id) ?? null,
+          recent_value: r.value,
+          recent_baseline: r.baseline,
+          recent_fpor: r.fpor,
+          recent_window: Math.min(v.games, lastN), // games actually in the recent window
+        };
+      }),
       curves: curves(bundle, values, neighbors),
     };
   }
 
-  root.Zone = { POSITION_GROUPS, groupOf, seasonLine, gamesPpg, zoneBaseline, draftValues, teamSummaries, curves, compute };
+  root.Zone = {
+    POSITION_GROUPS, groupOf, seasonLine, gamesPpg, formPpg, zoneBaseline, draftValues, teamSummaries, curves, compute,
+  };
 })(typeof globalThis !== "undefined" ? globalThis : this);

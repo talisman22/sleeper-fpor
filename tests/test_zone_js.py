@@ -101,3 +101,30 @@ def test_compute_clamps_controls_to_completed_weeks(zone):
     out = zone("compute", bundle(picks, {"a": player("RB", [10, 12])}, weeks=2),
                {"neighbors": 6, "minGames": 5, "through": 9})
     assert out["league"]["through"] == 2 and out["settings"]["min_games"] == 2
+
+
+def test_form_ppg_skips_missed_games_and_weights_recent(zone):
+    # Weeks 1-6; out weeks 4-5. Played: 10, 20, 30, 40 (most recent = 40).
+    p = player("WR", [10, 20, 30, None, None, 40])
+    equal = zone("formPpg", p, {"through": 6, "lastN": 3, "halfLife": 0, "minGames": 1})
+    assert equal == pytest.approx((20 + 30 + 40) / 3)  # last 3 *played*, injury weeks skipped
+    decay = zone("formPpg", p, {"through": 6, "lastN": 3, "halfLife": 1, "minGames": 1})
+    assert decay == pytest.approx((40 * 1 + 30 * 0.5 + 20 * 0.25) / 1.75)  # weight halves each game back
+    assert zone("formPpg", p, {"through": 6, "lastN": 9, "halfLife": 0, "minGames": 1}) == pytest.approx(25)
+    assert zone("formPpg", p, {"through": 6, "lastN": 3, "halfLife": 3, "minGames": 5}) is None  # min games
+
+
+def test_compute_recent_fpor_uses_recent_form_for_the_zone_too(zone):
+    picks = [pick(1, "RB", 1, "hot"), pick(2, "RB", 2, "cold")]
+    players = {
+        "hot": player("RB", [5, 5, 5, 20]),    # season 8.75, last game 20
+        "cold": player("RB", [15, 15, 15, 2]),  # season 11.75, last game 2
+    }
+    out = zone("compute", bundle(picks, players, weeks=4),
+               {"neighbors": 1, "minGames": 1, "recentGames": 1, "halfLife": 0})
+    by_id = {p["id"]: p for p in out["players"]}
+    assert by_id["hot"]["fpor"] == pytest.approx(8.75 - 11.75)       # season view: below his zone
+    assert by_id["hot"]["recent_fpor"] == pytest.approx(20 - 2)      # recent view, zone also recent
+    assert by_id["hot"]["recent_baseline"] == pytest.approx(2)
+    assert by_id["cold"]["recent_window"] == 1
+    assert out["settings"]["recent_games"] == 1

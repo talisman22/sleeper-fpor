@@ -91,6 +91,17 @@ select, input[type="search"] {
   background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
 }
 
+.card-head { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: flex-start; justify-content: space-between; }
+.card-head .note { max-width: 70ch; }
+.card-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 2px; margin: 0; }
+.seg label { cursor: pointer; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; padding: 5px 12px; border-radius: 6px; font-size: 0.88rem; color: var(--text-secondary); }
+.seg input:checked + span { background: var(--accent); color: #fff; }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .status { margin-left: auto; font-size: 0.85rem; color: var(--text-muted); }
 .status.error { color: #c62f2e; }
 

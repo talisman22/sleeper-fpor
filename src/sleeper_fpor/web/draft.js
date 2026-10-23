@@ -7,6 +7,7 @@ const ORIGIN_VAR = { own_pick: "--origin-own", acquired: "--origin-acquired", pi
 const PLOT_CONFIG = { displayModeBar: false, responsive: true };
 const LABEL_EACH_END = 32; // name the top/bottom N in the scatter, not every point
 const LABEL_PX_EACH = 33; // ...scaled down on narrow screens: one name per end per this many px of plot width
+const TREND_LABELS_EACH = 15; // risers/fallers sit in the dense middle of the cloud, so name fewer
 
 const form = document.getElementById("controls");
 const statusEl = document.getElementById("status");
@@ -78,6 +79,8 @@ function controls() {
     neighbors: Number(fd.get("neighbors")),
     minGames: Number(fd.get("min_games")),
     through: fd.get("through") ? Number(fd.get("through")) : undefined,
+    recentGames: Number(document.getElementById("recent-games").value),
+    halfLife: Number(document.getElementById("half-life").value),
   };
 }
 
@@ -136,6 +139,10 @@ function syncControls() {
   document.getElementById("min-games-out").textContent = settings.min_games;
   form.elements.neighbors.value = String(settings.neighbors);
   document.getElementById("neighbors-out").textContent = settings.neighbors;
+  const recentGames = document.getElementById("recent-games");
+  recentGames.max = String(league.through);
+  recentGames.value = String(settings.recent_games);
+  document.getElementById("recent-out").textContent = settings.recent_games;
 
   const teamSel = document.getElementById("f-team");
   if (teamSel.options.length === 1) {
@@ -152,6 +159,7 @@ function syncControls() {
 function render() {
   renderTiles();
   renderScatter();
+  renderRecent();
   renderCurve();
   renderTeams();
   renderTable();
@@ -191,19 +199,38 @@ function hoverData(p) {
     p.zone_size,
     signed(p.fpor),
     p.games,
+    fmt(p.recent_value),
+    fmt(p.recent_baseline),
+    signed(p.recent_fpor),
+    p.recent_window,
   ];
 }
 
 const HOVER =
   "<b>%{customdata[0]}</b>  %{customdata[1]}<br>%{customdata[2]}<br>" +
   "Drafted by: %{customdata[3]}<br>Rostered by: %{customdata[4]}<br>" +
-  "PPG: %{customdata[5]} over %{customdata[9]} G · zone avg %{customdata[6]} (n=%{customdata[7]})<br>" +
-  "<b>FPoR/G: %{customdata[8]}</b><extra></extra>";
+  "Season: %{customdata[5]} PPG over %{customdata[9]} G · zone avg %{customdata[6]} (n=%{customdata[7]}) · " +
+  "<b>FPoR/G %{customdata[8]}</b><br>" +
+  "Recent (last %{customdata[13]} G, weighted): %{customdata[10]} PPG · zone avg %{customdata[11]} · " +
+  "<b>FPoR/G %{customdata[12]}</b><extra></extra>";
 
-function renderScatter() {
-  const pts = data.players.filter((p) => p.fpor !== null);
-  const ux = undraftedX();
-  const xOf = (p) => (p.pick ?? ux + jitter(p.id, data.league.teams * 0.8));
+function labelCount(el, margin, available, cap = LABEL_EACH_END) {
+  const fit = Math.floor((el.clientWidth - margin.l - margin.r) / LABEL_PX_EACH);
+  return Math.max(0, Math.min(cap, fit, Math.floor(available / 2)));
+}
+
+function paddedSpan(values, pad = 0.08) {
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo || 1;
+  return [lo - span * pad, hi + span * pad];
+}
+
+/**
+ * Position-colored scatter with the top/bottom N points (by rankOf) named.
+ * Returns how many names were placed at each end.
+ */
+function labeledScatter(elId, pts, { xOf, yOf, rankOf, xRange, xaxis, yaxis, shapes = [], maxLabels }) {
   const traces = POSITIONS.map((pos) => {
     const group = pts.filter((p) => p.pos === pos);
     return {
@@ -211,50 +238,103 @@ function renderScatter() {
       mode: "markers",
       name: pos,
       x: group.map(xOf),
-      y: group.map((p) => p.fpor),
+      y: group.map(yOf),
       customdata: group.map(hoverData),
       hovertemplate: HOVER,
-      marker: {
-        color: posColor(pos),
-        symbol: POS_SYMBOL[pos],
-        size: 9,
-        line: { width: 1.5, color: css("--surface") },
-      },
+      marker: { color: posColor(pos), symbol: POS_SYMBOL[pos], size: 9, line: { width: 1.5, color: css("--surface") } },
     };
   });
-
-  const xRange = [-2, ux + data.league.teams];
-  const ys = pts.map((p) => p.fpor);
-  const ySpan = Math.max(...ys) - Math.min(...ys) || 1;
-  const yRange = [Math.min(...ys) - ySpan * 0.08, Math.max(...ys) + ySpan * 0.08];
+  const yRange = paddedSpan(pts.map(yOf));
   const margin = { l: 56, r: 16, t: 40, b: 48 };
-
-  const el = document.getElementById("scatter");
-  const ranked = [...pts].sort((a, b) => b.fpor - a.fpor);
-  const fit = Math.floor((el.clientWidth - margin.l - margin.r) / LABEL_PX_EACH);
-  const n = Math.max(0, Math.min(LABEL_EACH_END, fit, Math.floor(ranked.length / 2)));
+  const el = document.getElementById(elId);
+  const ranked = [...pts].sort((a, b) => rankOf(b) - rankOf(a));
+  const n = labelCount(el, margin, ranked.length, maxLabels);
   const labeled = [...ranked.slice(0, n), ...ranked.slice(-n)];
-  const annotations = placeLabels(labeled, pts, xOf, {
+  const annotations = placeLabels(labeled, pts, { xOf, yOf, rankOf }, {
     xRange, yRange, margin, width: el.clientWidth, height: el.clientHeight,
   });
+  Plotly.react(elId, traces, baseLayout({
+    margin,
+    xaxis: { ...baseLayout().xaxis, ...xaxis, range: xRange },
+    yaxis: { ...baseLayout().yaxis, ...yaxis, range: yRange },
+    annotations,
+    shapes,
+    hovermode: "closest",
+  }), PLOT_CONFIG);
+  return n;
+}
 
+function pickAxis() {
+  return { title: { text: "Draft pick" }, ...pickTicks() };
+}
+
+function renderScatter() {
+  const pts = data.players.filter((p) => p.fpor !== null);
+  const ux = undraftedX();
+  const n = labeledScatter("scatter", pts, {
+    xOf: (p) => p.pick ?? ux + jitter(p.id, data.league.teams * 0.8),
+    yOf: (p) => p.fpor,
+    rankOf: (p) => p.fpor,
+    xRange: [-2, ux + data.league.teams],
+    xaxis: pickAxis(),
+    yaxis: { title: { text: "FPoR per game" }, zeroline: true, zerolinewidth: 2 },
+  });
   document.getElementById("scatter-note").textContent =
     `Points per game played over the average of the nearest ${data.settings.neighbors} picks in the same ` +
     `position group. Names: top and bottom ${n}. Hover any point for its zone; shapes mark position.`;
+}
 
-  Plotly.react("scatter", traces, baseLayout({
-    margin,
-    xaxis: { ...baseLayout().xaxis, title: { text: "Draft pick" }, ...pickTicks(), range: xRange },
-    yaxis: { ...baseLayout().yaxis, title: { text: "FPoR per game" }, zeroline: true, zerolinewidth: 2, range: yRange },
-    annotations,
-    hovermode: "closest",
-  }), PLOT_CONFIG);
+function recentView() {
+  return document.querySelector("input[name=recent_view]:checked").value;
+}
+
+function renderRecent() {
+  const { recent_games: lastN, half_life: halfLife } = data.settings;
+  const weighting = halfLife > 0
+    ? `weighted with a ${halfLife}-game half-life (each game back counts ${Math.round(100 * Math.pow(0.5, 1 / halfLife))}% of the one after it)`
+    : "weighted equally";
+  const ux = undraftedX();
+  let n;
+  if (recentView() === "pick") {
+    const pts = data.players.filter((p) => p.recent_fpor !== null);
+    n = labeledScatter("recent-chart", pts, {
+      xOf: (p) => p.pick ?? ux + jitter(p.id, data.league.teams * 0.8),
+      yOf: (p) => p.recent_fpor,
+      rankOf: (p) => p.recent_fpor,
+      xRange: [-2, ux + data.league.teams],
+      xaxis: pickAxis(),
+      yaxis: { title: { text: "Recent FPoR per game" }, zeroline: true, zerolinewidth: 2 },
+    });
+    document.getElementById("recent-note").textContent =
+      `Each player's last ${lastN} games played, ${weighting}, against his zone's recent form. ` +
+      `Missed games are skipped, not counted as zeros. Names: top and bottom ${n}.`;
+  } else {
+    const pts = data.players.filter((p) => p.recent_fpor !== null && p.fpor !== null);
+    const all = pts.flatMap((p) => [p.fpor, p.recent_fpor]);
+    const [lo, hi] = paddedSpan(all);
+    n = labeledScatter("recent-chart", pts, {
+      xOf: (p) => p.fpor,
+      yOf: (p) => p.recent_fpor,
+      rankOf: (p) => p.recent_fpor - p.fpor,
+      maxLabels: TREND_LABELS_EACH,
+      xRange: [lo, hi],
+      xaxis: { title: { text: "Season FPoR per game" }, zeroline: true },
+      yaxis: { title: { text: "Recent FPoR per game" }, zeroline: true },
+      shapes: [{
+        type: "line", x0: lo, y0: lo, x1: hi, y1: hi, layer: "below",
+        line: { color: css("--axis-line"), width: 1.5, dash: "dot" },
+      }],
+    });
+    document.getElementById("recent-note").textContent =
+      `Above the dotted line = playing better lately than his season says; below = cooling off. ` +
+      `Recent = last ${lastN} games played, ${weighting}. Names: up to ${n} biggest risers and fallers.`;
+  }
 }
 
 // Greedy label placement: each name tries a ring of offsets around its point (outward side
 // first) and takes the first spot that overlaps no earlier label, any marker, or the plot edge.
-// Extremes are placed first so the most notable names get the closest spots.
-function placeLabels(players, allPoints, xOf, { xRange, yRange, margin, width, height }) {
+// Extremes (largest |rankOf|) are placed first so the most notable names get the closest spots.
+function placeLabels(players, allPoints, { xOf, yOf, rankOf }, { xRange, yRange, margin, width, height }) {
   const plotW = width - margin.l - margin.r;
   const plotH = height - margin.t - margin.b;
   const px = (x) => ((x - xRange[0]) / (xRange[1] - xRange[0])) * plotW;
@@ -263,19 +343,19 @@ function placeLabels(players, allPoints, xOf, { xRange, yRange, margin, width, h
   const LINE_H = 13;
   const PAD = 2;
 
-  const boxes = allPoints.map((p) => ({ x: px(xOf(p)) - 5, y: py(p.fpor) - 5, w: 10, h: 10 })); // every marker
+  const boxes = allPoints.map((p) => ({ x: px(xOf(p)) - 5, y: py(yOf(p)) - 5, w: 10, h: 10 })); // every marker
   const overlaps = (a) => boxes.some((b) =>
     a.x < b.x + b.w + PAD && b.x < a.x + a.w + PAD && a.y < b.y + b.h + PAD && b.y < a.y + a.h + PAD);
   const inside = (a) => a.x >= 0 && a.y >= 0 && a.x + a.w <= plotW && a.y + a.h <= plotH;
 
-  const order = [...players].sort((a, b) => Math.abs(b.fpor) - Math.abs(a.fpor));
+  const order = [...players].sort((a, b) => Math.abs(rankOf(b)) - Math.abs(rankOf(a)));
   const ink = css("--text-primary");
   const leader = css("--text-muted");
   return order.map((p) => {
     const cx = px(xOf(p));
-    const cy = py(p.fpor);
+    const cy = py(yOf(p));
     const w = p.name.length * CHAR_W + 4;
-    const out = p.fpor >= 0 ? -1 : 1; // pixel y grows downward: positives label upward
+    const out = rankOf(p) >= 0 ? -1 : 1; // pixel y grows downward: high ranks label upward
     const candidates = [];
     for (let ring = 1; ring <= 7; ring++) {
       for (const side of [out, -out]) {
@@ -284,19 +364,16 @@ function placeLabels(players, allPoints, xOf, { xRange, yRange, margin, width, h
         }
       }
     }
-    let pick = candidates[0];
-    for (const c of candidates) {
+    const pick = candidates.find((c) => {
       const box = { x: cx + c.dx - w / 2, y: cy + c.dy - LINE_H / 2, w, h: LINE_H };
-      if (inside(box) && !overlaps(box)) {
-        pick = c;
-        break;
-      }
-    }
+      return inside(box) && !overlaps(box);
+    });
+    if (!pick) return null; // no clear spot: skip rather than overlap another label
     boxes.push({ x: cx + pick.dx - w / 2, y: cy + pick.dy - LINE_H / 2, w, h: LINE_H });
     const near = pick.ring === 1 && pick.dx === 0;
     return {
       x: xOf(p),
-      y: p.fpor,
+      y: yOf(p),
       text: p.name,
       showarrow: true,
       ax: pick.dx,
@@ -307,7 +384,7 @@ function placeLabels(players, allPoints, xOf, { xRange, yRange, margin, width, h
       standoff: 5,
       font: { size: 10.5, color: ink },
     };
-  });
+  }).filter(Boolean);
 }
 
 function renderCurve() {
@@ -461,6 +538,7 @@ function renderTable() {
       <td class="num">${fmt(p.value)}</td>
       <td class="num">${fmt(p.baseline)}</td>
       <td class="num ${p.fpor > 0 ? "pos-val" : "neg-val"}">${signed(p.fpor)}</td>
+      <td class="num ${p.recent_fpor > 0 ? "pos-val" : "neg-val"}">${signed(p.recent_fpor)}</td>
     </tr>`).join("");
   document.querySelectorAll("#players th").forEach((th) => {
     th.setAttribute("aria-sort", th.dataset.key === sort.key ? (sort.dir > 0 ? "ascending" : "descending") : "none");
@@ -474,6 +552,16 @@ form.addEventListener("input", (e) => {
   const out = { neighbors: "neighbors-out", min_games: "min-games-out" }[e.target.name];
   if (out) document.getElementById(out).textContent = e.target.value;
   scheduleRecompute();
+});
+
+// Recent-form card: its window/weighting change the numbers; the view toggle only redraws.
+document.getElementById("recent-card").addEventListener("input", (e) => {
+  if (e.target.id === "recent-games") document.getElementById("recent-out").textContent = e.target.value;
+  if (e.target.name === "recent_view") {
+    if (data) renderRecent();
+  } else {
+    scheduleRecompute();
+  }
 });
 
 for (const id of ["f-search", "f-team", "f-team-mode", "f-pos", "f-origin"]) {
@@ -507,7 +595,11 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => data && renderScatter(), 200);
+  resizeTimer = setTimeout(() => {
+    if (!data) return;
+    renderScatter();
+    renderRecent();
+  }, 200);
 });
 
 load().then(() => {

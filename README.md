@@ -59,6 +59,7 @@ How did each pick turn out compared with the players drafted around it? For a pl
 
 - Only games played count, so injuries and byes never count against a player. Players need 3 games (adjustable) before they're judged.
 - A player never sets his own bar. Undrafted pickups on current rosters are measured against the last picks of the draft.
+- **Recent form:** the same comparison over each player's last N games *played* (missed games are skipped), weighted toward recent games with an adjustable half-life (default: last 4 games, 3-game half-life). The zone uses its neighbors' recent form too, so it stays like-for-like. A second view plots recent against season FPoR to show who's rising or cooling.
 - Team views: **draft class value** (everyone a team drafted, wherever they are now) and **current roster value**, split into own picks, players acquired from other teams, and undrafted pickups.
 
 **How it's built.** Python fetches Sleeper data and scores it with the league's settings into one small `data.json`. The page (`src/sleeper_fpor/web/`) does the zone math in the browser (`zone.js`), so the sliders are instant and the site can be hosted as plain files.

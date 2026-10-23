@@ -45,6 +45,35 @@
     <div id="scatter" class="chart chart-tall"></div>
   </section>
 
+  <section class="card" id="recent-card">
+    <div class="card-head">
+      <div>
+        <h2>Recent form — weighted FPoR</h2>
+        <p class="note" id="recent-note"></p>
+      </div>
+      <div class="card-controls">
+        <label class="ctl">
+          <span>Last <output id="recent-out">4</output> games played</span>
+          <input type="range" id="recent-games" min="1" max="6" value="4" />
+        </label>
+        <label class="ctl">
+          <span>Weighting</span>
+          <select id="half-life">
+            <option value="0">Equal weight</option>
+            <option value="2">Recent-heavy (half-life 2 games)</option>
+            <option value="3" selected>Balanced (half-life 3 games)</option>
+            <option value="5">Gentle (half-life 5 games)</option>
+          </select>
+        </label>
+        <fieldset class="seg" aria-label="View">
+          <label><input type="radio" name="recent_view" value="pick" checked /> <span>By draft pick</span></label>
+          <label><input type="radio" name="recent_view" value="trend" /> <span>Recent vs season</span></label>
+        </fieldset>
+      </div>
+    </div>
+    <div id="recent-chart" class="chart chart-tall"></div>
+  </section>
+
   <section class="card">
     <h2>What each pick was expected to produce</h2>
     <p class="note">Points are players' points per game played; each line is its group's zone average at each pick — the replacement level.</p>
@@ -97,6 +126,7 @@
             <th data-key="value" class="num">PPG</th>
             <th data-key="baseline" class="num">Zone avg</th>
             <th data-key="fpor" class="num">FPoR/G</th>
+            <th data-key="recent_fpor" class="num">Recent FPoR/G</th>
           </tr>
         </thead>
         <tbody></tbody>
