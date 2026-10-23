@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Draft Zone FPoR</title>
+  <link rel="stylesheet" href="draft.css" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <header class="page-head">
+    <div>
+      <h1 id="title">Draft Zone FPoR</h1>
+      <p class="sub" id="subtitle">Loading league…</p>
+    </div>
+    <p class="explain">
+      Each player is measured against the <strong>players drafted around him</strong> who fill the
+      same lineup spots: QBs vs QBs, RB/WR/TE together (flex), K vs K, DEF vs DEF.
+      Replacement is their average <strong>points per game played</strong>, so missed games never count
+      against anyone. Undrafted pickups are measured against the end of the draft.
+    </p>
+  </header>
+
+  <form class="controls" id="controls" onsubmit="return false">
+    <label class="ctl">
+      <span>Zone: nearest <output id="neighbors-out">6</output> picks in group</span>
+      <input type="range" name="neighbors" min="2" max="20" value="6" />
+    </label>
+    <label class="ctl" id="min-games-ctl">
+      <span>Min games: <output id="min-games-out">3</output></span>
+      <input type="range" name="min_games" min="1" max="6" value="3" />
+    </label>
+    <label class="ctl">
+      <span>Through week</span>
+      <select name="through" id="through"></select>
+    </label>
+    <span class="status" id="status" role="status"></span>
+  </form>
+
+  <section class="tiles" id="tiles" aria-label="Highlights"></section>
+
+  <section class="card">
+    <h2>Draft pick vs FPoR</h2>
+    <p class="note" id="scatter-note"></p>
+    <div id="scatter" class="chart chart-tall"></div>
+  </section>
+
+  <section class="card">
+    <h2>What each pick was expected to produce</h2>
+    <p class="note">Points are players' points per game played; each line is its group's zone average at each pick — the replacement level.</p>
+    <div id="curve" class="chart"></div>
+  </section>
+
+  <div class="grid-2">
+    <section class="card">
+      <h2>Draft class value</h2>
+      <p class="note">Sum of FPoR over every player each team drafted — wherever they are now. Click a bar to list that team's picks.</p>
+      <div id="draft-class" class="chart chart-teams"></div>
+    </section>
+    <section class="card">
+      <h2>Current roster value</h2>
+      <p class="note">Sum of FPoR over today's roster, split by how each player arrived. Click a bar to list that roster.</p>
+      <div id="roster" class="chart chart-teams"></div>
+    </section>
+  </div>
+
+  <section class="card" id="table-card">
+    <div class="table-head">
+      <h2>Players</h2>
+      <div class="filters">
+        <input type="search" id="f-search" placeholder="Search players" aria-label="Search players" />
+        <select id="f-team" aria-label="Team"><option value="">All teams</option></select>
+        <select id="f-team-mode" aria-label="Team filter mode">
+          <option value="owner">on roster</option>
+          <option value="drafted_by">drafted by</option>
+        </select>
+        <select id="f-pos" aria-label="Position"><option value="">All positions</option></select>
+        <select id="f-origin" aria-label="Origin">
+          <option value="">Any origin</option>
+          <option value="own_pick">Own picks</option>
+          <option value="acquired">Acquired</option>
+          <option value="pickup">Undrafted pickups</option>
+          <option value="none">Not rostered</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="players">
+        <thead>
+          <tr>
+            <th data-key="pick" class="num">Pick</th>
+            <th data-key="name">Player</th>
+            <th data-key="pos">Pos</th>
+            <th data-key="drafted_by">Drafted by</th>
+            <th data-key="owner">Rostered by</th>
+            <th data-key="games" class="num">G</th>
+            <th data-key="value" class="num">PPG</th>
+            <th data-key="baseline" class="num">Zone avg</th>
+            <th data-key="fpor" class="num">FPoR/G</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="note" id="table-count"></p>
+  </section>
+
+  <footer class="foot">
+    Data: Sleeper API, scored with your league's settings. <span id="updated"></span>
+  </footer>
+
+  <script src="zone.js"></script>
+  <script src="draft.js"></script>
+</body>
+</html>

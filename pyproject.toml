@@ -1,0 +1,39 @@
+[project]
+name = "sleeper-fpor"
+version = "0.1.0"
+description = "Weekly fantasy points over replacement by draft pick for 16-team PPR leagues"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.27",
+  "rich>=13.7",
+]
+
+[project.optional-dependencies]
+app = [
+  "streamlit>=1.51",
+  "pandas>=2.0",
+]
+web = [
+  "flask>=3.0",
+]
+dev = [
+  "pytest>=8",
+  "mini-racer>=0.12",  # runs web/zone.js in tests
+]
+
+[project.scripts]
+sleeper-fpor = "sleeper_fpor.cli:main"
+sleeper-trade = "sleeper_fpor.launch:main"
+sleeper-draft = "sleeper_fpor.draft_web:main"
+sleeper-draft-build = "sleeper_fpor.draft_site:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sleeper_fpor = ["web/*"]

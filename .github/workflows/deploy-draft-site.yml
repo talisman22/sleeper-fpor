@@ -1,0 +1,54 @@
+name: Deploy draft-zone FPoR site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 11 * * *"  # daily, 11:00 UTC (7 AM ET)
+    - cron: "0 7 * * 2"   # Tuesday 07:00 UTC, early refresh once Monday Night Football is final
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install .
+      - name: Build site from Sleeper
+        env:
+          # Encrypted repository secret: never stored in the repo, masked in logs.
+          SLEEPER_LEAGUE_ID: ${{ secrets.SLEEPER_LEAGUE_ID }}
+        run: |
+          if [ -z "$SLEEPER_LEAGUE_ID" ]; then
+            echo "::error::Add a repository secret named SLEEPER_LEAGUE_ID (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          python -m sleeper_fpor.draft_site --out site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
