@@ -172,19 +172,10 @@ function tile(label, value, who, img) {
 }
 
 function renderTiles() {
-  const drafted = data.players.filter((p) => p.pick !== null && p.fpor !== null);
-  const best = drafted.reduce((a, b) => (b.fpor > a.fpor ? b : a), drafted[0]);
-  const worst = drafted.reduce((a, b) => (b.fpor < a.fpor ? b : a), drafted[0]);
   const byClass = [...data.teams].sort((a, b) => b.draft_class - a.draft_class)[0];
-  const byRoster = [...data.teams].sort((a, b) => b.roster_total - a.roster_total)[0];
   const avatar = (t) => (t.avatar ? `https://sleepercdn.com/avatars/thumbs/${t.avatar}` : null);
-  const u = "/G";
-  document.getElementById("tiles").innerHTML = [
-    tile("Biggest steal", `${signed(best.fpor)}${u}`, `${best.name} · pick ${best.pick} · ${clean(best.drafted_by)}`, best.img),
-    tile("Biggest bust", `${signed(worst.fpor)}${u}`, `${worst.name} · pick ${worst.pick} · ${clean(worst.drafted_by)}`, worst.img),
-    tile("Best draft class", `${signed(byClass.draft_class)}${u}`, clean(byClass.name), avatar(byClass)),
-    tile("Best current roster", `${signed(byRoster.roster_total)}${u}`, clean(byRoster.name), avatar(byRoster)),
-  ].join("");
+  document.getElementById("tiles").innerHTML =
+    tile("Best draft class", `${signed(byClass.draft_class)}/G`, clean(byClass.name), avatar(byClass));
 }
 
 function hoverData(p) {

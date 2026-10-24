@@ -106,7 +106,7 @@ select, input[type="search"] {
 .status.error { color: #c62f2e; }
 
 .tiles {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 20px;
 }
 .tile {
   display: flex; gap: 12px; align-items: center; padding: 14px 16px;
